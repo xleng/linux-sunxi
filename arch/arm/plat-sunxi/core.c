@@ -437,3 +437,20 @@ MACHINE_START(SUN7I, "sun7i")
 	.dma_zone_size	= SZ_256M,
 #endif
 MACHINE_END
+
+MACHINE_START(BANANAPI, "BananaPi")
+	.atag_offset	= 0x100,
+	.timer          = &sw_sys_timer,
+	.map_io         = sun7i_map_io,
+	.init_early     = NULL,
+	.init_irq	= gic_init_irq,
+	.init_machine   = sw_core_init,
+	.reserve        = sw_core_reserve,
+	.restart	= sun4i_restart,
+#ifdef CONFIG_MULTI_IRQ_HANDLER
+	.handle_irq	= gic_handle_irq,
+#endif
+#ifdef CONFIG_ZONE_DMA
+	.dma_zone_size	= SZ_256M,
+#endif
+MACHINE_END

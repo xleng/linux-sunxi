@@ -36,6 +36,7 @@
 #include <mach/clock.h>
 #ifdef CONFIG_GMAC_FOR_BANANAPI
 #include <mach/includes.h>
+#include <plat/sys_config.h>         //Fix the GAMC cannot build as module
 #endif
 
 #include "sunxi_gmac.h"

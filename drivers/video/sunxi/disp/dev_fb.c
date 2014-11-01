@@ -1990,6 +1990,7 @@ __s32 Fb_Init(__u32 from)
 							       fb_para.
 							       primary_screen_id);
 			}
+	printk(KERN_ERR "##fb init:w=%d,h=%d,fbmode=%d\n",fb_para.width,fb_para.height,fb_para.fb_mode); //Debug		
 			Display_Fb_Request(i, &fb_para);
 
 #if 0

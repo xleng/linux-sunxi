@@ -38,8 +38,8 @@
 #include <plat/sys_config.h>
 #include <linux/regulator/consumer.h>
 #include <mach/system.h>
-#include "/home/simon/nfs/bananapi-bsp/linux-bananapi/drivers/media/video/sun4i_csi/include/sun4i_csi_core.h"
-#include "/home/simon/nfs/bananapi-bsp/linux-bananapi/drivers/media/video/sun4i_csi/include/sun4i_dev_csi.h"
+#include "../include/sun4i_csi_core.h"
+#include "../include/sun4i_dev_csi.h"
 
 MODULE_AUTHOR("raymonxiu");
 MODULE_DESCRIPTION("A low-level driver for OV ov5640 sensors");

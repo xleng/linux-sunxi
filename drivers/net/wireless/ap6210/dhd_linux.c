@@ -482,7 +482,7 @@ extern void dhd_dbg_remove(void);
  * the the 2 vars init at init time
  *benn@cubietech.com
  */
-#define WL_HOST_WAKE_DEF_GPIO 2
+#define WL_HOST_WAKE_DEF_GPIO 86
 int wl_host_wake_irqno = -1;
 int wl_host_wake = -1;
 
@@ -4398,7 +4398,7 @@ dhd_module_cleanup(void)
 		gpio_free(wl_host_wake);
 	wl_host_wake = -1;
 	
-	sw_rfkill_exit();
+	/*sw_rfkill_exit(); The comment must remove when we use the Bluetooth<LeMaker>*/ 
 	ap6210_gpio_wifi_exit();
 }
 
@@ -4414,9 +4414,10 @@ dhd_module_init(void)
 #endif 
 
 	AP6210_DEBUG("%s: Enter\n", __FUNCTION__);
+   AP6210_INFO("--->The Drive has been modified for BananaPro by LeMaker team<---\n");
 
 	ap6210_gpio_wifi_init();
-	sw_rfkill_init();
+	/*sw_rfkill_init(); The comment must remove when we use the Bluetooth<LeMaker>*/
 
 	if (gpio_request(WL_HOST_WAKE_DEF_GPIO, "wl_host_wake")) {
 		AP6210_ERR("[%s] get wl_host_wake gpio failed\n", __FUNCTION__);

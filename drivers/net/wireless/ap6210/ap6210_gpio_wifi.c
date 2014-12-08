@@ -13,7 +13,7 @@
 #include <linux/gpio.h>
 #include <ap6210.h>
 
-static char* wifi_para = "wifi_para";
+static char *wifi_para = "sdio_wifi_pro_para"; /*modify by lemaker team for ap6210*/
 
 struct ap6210_gpio_wifi_ops {
 	char* mod_name;
@@ -31,8 +31,9 @@ struct ap6210_gpio_wifi_ops {
 #endif	/* CONFIG_PROC_FS */
 };
 
-static int ap6210_wl_regon = 0;
-static int ap6210_bt_regon = 0;
+static unsigned int ap6210_wl_regon = 0;
+static unsigned int ap6210_bt_regon = 0; 
+static unsigned int ap6210_wl_vdd_en = 0; /*add by lemaker team for ap6210*/
 
 struct ap6210_gpio_wifi_ops ap6210_wifi_select_pm_ops;
 
@@ -60,9 +61,9 @@ static int ap6210_gpio_ctrl(char* name, int level)
 	int i = 0;	
 	int ret = 0;
 	int gpio = 0;
-	char * gpio_name[2] = {"ap6210_wl_regon", "ap6210_bt_regon"};
+	char * gpio_name[3] = {"ap6210_wl_regon", "ap6210_bt_regon", "ap6210_wl_vdd_en"}; /*modify by lemaker team for ap6210*/
 
-	for (i = 0; i < 2; i++) {
+	for (i = 0; i < 3; i++) {
 		if (strcmp(name, gpio_name[i]) == 0) {
 			switch (i)
 			{
@@ -71,6 +72,9 @@ static int ap6210_gpio_ctrl(char* name, int level)
 				break;
 			case 1: /*ap6210_bt_regon*/
 				gpio = ap6210_bt_regon;
+				break;
+			case 2: /*add by lemaker team for ap6210*/
+				gpio = ap6210_wl_vdd_en;
 				break;
 			default:
 				AP6210_ERR("no matched gpio.\n" );
@@ -80,6 +84,14 @@ static int ap6210_gpio_ctrl(char* name, int level)
 	}
 
 	ret = gpio_write_one_pin_value(gpio, level, name);
+
+	if (ret) /*add by lemaker team for ap6210*/
+	{
+		AP6210_INFO("Failed to set the gpio %s to %d\n", name, level);
+		return -1;
+	}else{
+		AP6210_INFO("Succeed to set the gpio %s to %d\n", name, level);
+	}
 	
 	return 0;
 }
@@ -89,9 +101,9 @@ static int ap6210_gpio_read(char* name)
 	int i = 0;	
 	int gpio = 0;
 	int val = 0;
-	char * gpio_name[2] = {"ap6210_wl_regon", "ap6210_bt_regon"};
+	char * gpio_name[3] = {"ap6210_wl_regon", "ap6210_bt_regon", "ap6210_wl_vdd_en"}; /*modify by lemaker team for ap6210*/
 
-	for (i = 0; i < 2; i++) {
+	for (i = 0; i < 3; i++) {
 		if (strcmp(name, gpio_name[i]) == 0) {
 			switch (i)
 			{
@@ -101,6 +113,9 @@ static int ap6210_gpio_read(char* name)
 			case 1: /*ap6210_bt_regon*/
 				gpio = ap6210_bt_regon;
 				break;
+ 			case 2: /*add by lemaker team for ap6210*/
+				gpio = ap6210_wl_vdd_en;
+ 				break;
 			default:
 				AP6210_ERR("no matched gpio.\n" );
 			}
@@ -131,7 +146,7 @@ void ap6210_power(int mode, int *updown)
 
 	return;	
 }
-
+/* remove by lemaker team for ap6210
 static void ap6210_cfg_gpio_32k_clkout(int gpio_index)
 {
 	int ret;    
@@ -154,12 +169,14 @@ static void ap6210_cfg_gpio_32k_clkout(int gpio_index)
 
 	clk_enable(clk_32k);
 }
+*/
 void ap6210_gpio_init(void)
 {
 	struct ap6210_gpio_wifi_ops *ops = &ap6210_wifi_select_pm_ops;
-	int ap6210_lpo = 0;
+	/*int ap6210_lpo = 0;*/
 
 /* CT expected ap6210_lpo as a GPIO */
+/* remove by lemaker team for ap6210
 	ap6210_lpo = gpio_request_ex(wifi_para, "ap6xxx_lpo");
 	if (!ap6210_lpo) {
 		AP6210_ERR("request lpo gpio failed.\n" );
@@ -170,21 +187,31 @@ void ap6210_gpio_init(void)
 		AP6210_DEBUG("config 32k clock.\n" );
 		ap6210_cfg_gpio_32k_clkout(ap6210_lpo);
 	}
-
+*/
 	ap6210_wl_regon = gpio_request_ex(wifi_para, "ap6xxx_wl_regon");
 	if (!ap6210_wl_regon) {
 		AP6210_ERR("request wl_regon gpio failed.\n" );
 		return;
 	}
-
+   /* The comment must remove when we use the Bluetooth<LeMaker>
 	ap6210_bt_regon = gpio_request_ex(wifi_para, "ap6xxx_bt_regon");
 	if (!ap6210_bt_regon) {
 		AP6210_ERR("request ap6210_bt_regon gpio failed.\n" );
 		return;
 	}
-
+    */
+    
+	/*add by lemaker team for ap6210*/
+	ap6210_wl_vdd_en = gpio_request_ex(wifi_para, "ap6xxx_wl_vdd_en");
+	if (!ap6210_wl_vdd_en) {
+		AP6210_ERR("request wl_vdd_en gpio failed.\n" );
+		return;
+	}
 	ops->gpio_ctrl	= ap6210_gpio_ctrl;
 	ops->power = ap6210_power;
+
+	ap6210_gpio_ctrl("ap6210_wl_vdd_en", 0); /*enable the vdd*/
+	
 }
 
 int ap6210_gpio_wifi_get_mod_type(void)
@@ -294,8 +321,9 @@ static int ap6210_gpio_wifi_get_res(void)
 {
 	struct ap6210_gpio_wifi_ops *ops = &ap6210_wifi_select_pm_ops;
 
-	if (SCRIPT_PARSER_OK != script_parser_fetch(wifi_para, "wifi_used", &ops->wifi_used, 1)) {
-		AP6210_ERR("parse wifi_used failed in script.fex.\n" );
+	 /*add by lemaker team for AP6210*/
+	if (SCRIPT_PARSER_OK != script_parser_fetch(wifi_para, "sdio_wifi_pro_used", &ops->wifi_used, 1)) {
+		AP6210_ERR("parse sdio_wifi_pro_used failed in script.fex.\n" );
 		return -1;
 	}
 	if (!ops->wifi_used) {
@@ -303,18 +331,20 @@ static int ap6210_gpio_wifi_get_res(void)
 		return -1;
 	}
 
-	if (SCRIPT_PARSER_OK != script_parser_fetch(wifi_para, "wifi_sdc_id", &ops->sdio_id, 1)) {
-		AP6210_ERR("parse wifi_sdc_id in script.fex failed.\n" );
+	/*add by lemaker team for AP6210*/
+	if (SCRIPT_PARSER_OK != script_parser_fetch(wifi_para, "sdio_wifi_pro_sdc_id", &ops->sdio_id, 1)) {
+		AP6210_ERR("parse sdio_wifi_pro_sdc_id in script.fex failed.\n" );
 		return -1;
 	}
-
+/* remove by lemaker team for AP6210
 	if (SCRIPT_PARSER_OK != script_parser_fetch(wifi_para, "wifi_usbc_id", &ops->usb_id, 1)) {
 		AP6210_ERR("parse wifi_sdc_id in script.fex failed.\n" );
 		return -1;
 	}
-
-	if (SCRIPT_PARSER_OK != script_parser_fetch(wifi_para, "wifi_mod_sel", &ops->module_sel, 1)) {
-		AP6210_ERR("parse wifi_sdc_id in script.fex failed.\n" );
+*/
+	/*add by lemaker team for AP6210*/
+	if (SCRIPT_PARSER_OK != script_parser_fetch(wifi_para, "sdio_wifi_pro_mod_sel", &ops->module_sel, 1)) {
+		AP6210_ERR("parse sdio_wifi_pro_mod_sel in script.fex failed.\n" );
 		return -1;
 	}
 

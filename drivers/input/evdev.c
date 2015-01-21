@@ -28,6 +28,13 @@
 #include <linux/cdev.h>
 #include "input-compat.h"
 
+enum evdev_clock_type {
+	EV_CLK_REAL = 0,
+	EV_CLK_MONO,
+	EV_CLK_BOOT,
+	EV_CLK_MAX
+};
+
 struct evdev {
 	int open;
 	struct input_handle handle;
@@ -49,7 +56,7 @@ struct evdev_client {
 	struct fasync_struct *fasync;
 	struct evdev *evdev;
 	struct list_head node;
-	int clkid;
+	int clk_type;
 	bool revoked;
 	unsigned int bufsize;
 	struct input_event buffer[];
@@ -101,15 +108,18 @@ static void __evdev_flush_queue(struct evdev_client *client, unsigned int type)
 	client->head = head;
 }
 
-/* queue SYN_DROPPED event */
-static void evdev_queue_syn_dropped(struct evdev_client *client)
+/* queue SYN_DROPPED event and flush queue if flush parameter is true */
+static void evdev_queue_syn_dropped(struct evdev_client *client, bool flush)
 {
 	unsigned long flags;
 	struct input_event ev;
 	ktime_t time;
 
-	time = (client->clkid == CLOCK_MONOTONIC) ?
-		ktime_get() : ktime_get_real();
+	time = client->clk_type == EV_CLK_REAL ?
+			ktime_get_real() :
+			client->clk_type == EV_CLK_MONO ?
+				ktime_get() :
+				ktime_get_boottime();
 
 	ev.time = ktime_to_timeval(time);
 	ev.type = EV_SYN;
@@ -117,6 +127,9 @@ static void evdev_queue_syn_dropped(struct evdev_client *client)
 	ev.value = 0;
 
 	spin_lock_irqsave(&client->buffer_lock, flags);
+
+	if (flush)
+		client->packet_head = client->head = client->tail;
 
 	client->buffer[client->head++] = ev;
 	client->head &= client->bufsize - 1;
@@ -128,6 +141,32 @@ static void evdev_queue_syn_dropped(struct evdev_client *client)
 	}
 
 	spin_unlock_irqrestore(&client->buffer_lock, flags);
+}
+
+static int evdev_set_clk_type(struct evdev_client *client, unsigned int clkid)
+{
+	if (client->clk_type == clkid)
+		return 0;
+
+	switch (clkid) {
+
+	case CLOCK_REALTIME:
+		client->clk_type = EV_CLK_REAL;
+		break;
+	case CLOCK_MONOTONIC:
+		client->clk_type = EV_CLK_MONO;
+		break;
+	case CLOCK_BOOTTIME:
+		client->clk_type = EV_CLK_BOOT;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	/* Flush pending events and queue SYN_DROPPED event.*/
+	evdev_queue_syn_dropped(client, true);
+
+	return 0;
 }
 
 static void __pass_event(struct evdev_client *client,
@@ -159,7 +198,7 @@ static void __pass_event(struct evdev_client *client,
 
 static void evdev_pass_values(struct evdev_client *client,
 			const struct input_value *vals, unsigned int count,
-			ktime_t mono, ktime_t real)
+			ktime_t *ev_time)
 {
 	struct evdev *evdev = client->evdev;
 	const struct input_value *v;
@@ -169,8 +208,7 @@ static void evdev_pass_values(struct evdev_client *client,
 	if (client->revoked)
 		return;
 
-	event.time = ktime_to_timeval(client->clkid == CLOCK_MONOTONIC ?
-				      mono : real);
+	event.time = ktime_to_timeval(ev_time[client->clk_type]);
 
 	/* Interrupts are disabled, just acquire the lock. */
 	spin_lock(&client->buffer_lock);
@@ -198,21 +236,22 @@ static void evdev_events(struct input_handle *handle,
 {
 	struct evdev *evdev = handle->private;
 	struct evdev_client *client;
-	ktime_t time_mono, time_real;
+	ktime_t ev_time[EV_CLK_MAX];
 
-	time_mono = ktime_get();
-	time_real = ktime_mono_to_real(time_mono);
+	ev_time[EV_CLK_MONO] = ktime_get();
+	ev_time[EV_CLK_REAL] = ktime_mono_to_real(ev_time[EV_CLK_MONO]);
+	ev_time[EV_CLK_BOOT] = ktime_mono_to_any(ev_time[EV_CLK_MONO],
+						 TK_OFFS_BOOT);
 
 	rcu_read_lock();
 
 	client = rcu_dereference(evdev->grab);
 
 	if (client)
-		evdev_pass_values(client, vals, count, time_mono, time_real);
+		evdev_pass_values(client, vals, count, ev_time);
 	else
 		list_for_each_entry_rcu(client, &evdev->client_list, node)
-			evdev_pass_values(client, vals, count,
-					  time_mono, time_real);
+			evdev_pass_values(client, vals, count, ev_time);
 
 	rcu_read_unlock();
 }
@@ -764,7 +803,7 @@ static int evdev_handle_get_val(struct evdev_client *client,
 
 	ret = bits_to_user(mem, maxbit, maxlen, p, compat);
 	if (ret < 0)
-		evdev_queue_syn_dropped(client);
+		evdev_queue_syn_dropped(client, false);
 
 	kfree(mem);
 
@@ -877,10 +916,8 @@ static long evdev_do_ioctl(struct file *file, unsigned int cmd,
 	case EVIOCSCLOCKID:
 		if (copy_from_user(&i, p, sizeof(unsigned int)))
 			return -EFAULT;
-		if (i != CLOCK_MONOTONIC && i != CLOCK_REALTIME)
-			return -EINVAL;
-		client->clkid = i;
-		return 0;
+
+		return evdev_set_clk_type(client, i);
 
 	case EVIOCGKEYCODE:
 		return evdev_handle_get_keycode(dev, p);
